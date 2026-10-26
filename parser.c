@@ -37,10 +37,21 @@ Identifier identifierTable[200];
 Symbol symbolTable[100];
 
 //Function defs
-void addSymbol(int type, int name, int value, int level, int address, int mark);
+
+//Adds Symbol to symbol table
+void addSymbol(int type, int nameIdx, int value, int level, int address, int mark);
+//Declares action for a constant variable
 void constDecleration();
+//Declares action for a variable
 void varDecleration();
+//Contains structure of code block
 void block();
+//Contains structure of whole program
+void program();
+//Helper function to find symbolTable index
+int findSymbol(int nameIdx);
+
+void statement();
 
 int main(){
     FILE* tokens = fopen("tokens.txt", "r");
@@ -63,6 +74,7 @@ int main(){
         tokenTable[tCount] = t;
         tCount++;
     }
+    fclose(tokens);
 
     //Scanning names into local nametable
     Identifier i;
@@ -70,9 +82,10 @@ int main(){
         identifierTable[iCount] = i;
         iCount++;
     }
+    fclose(nametable);
 
     //Scanning tokenTable to get symbolTable
-    
+    program();
 
 
    
@@ -139,9 +152,54 @@ void varDecleration(){
 
         addSymbol(2, nameIdx, 0, nextAddress);
         nextAddress++;
-        currentToken++;
     }
 
     //Consumes semi-colon
     currentToken++;
+}
+
+void block(){
+    //Checks for const keyword
+    if(currentToken < tCount && tokenTable[currentToken].tCode == 31){
+        constDecleration();
+    }
+    //Checks for var keyword
+    if(currentToken < tCount && tokenTable[currentToken].tCode == 32){
+        varDecleration();
+    }
+}
+
+void program(){
+    block();
+    //Checks if token is period
+    if(currentToken < tCount && tokenTable[currentToken].tCode == 17){
+        //Consumers period
+        currentToken++;
+    }
+
+    else{
+        //Error for when program doesn't end with period
+        return;
+    }
+
+    if(currentToken != tCount){
+        //Error for when program ends but tokens still remain after period
+        return;
+    }
+}
+
+int findSymbol(int nameIdx){
+    //Go through symbols and check if nameIdx is taken already or if variable already used
+    //If not returns symbolTable index
+    for(int i = symbolCount - 1; i >= 0; i--){
+        if(symbolTable[i].nameIdx == nameIdx && symbolTable[i].mark == 0){
+            return i;
+        }
+    }
+    
+    return -1;
+}
+
+void statement(){
+    
 }
