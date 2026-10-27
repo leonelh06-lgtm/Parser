@@ -39,19 +39,29 @@ Symbol symbolTable[100];
 //Function defs
 
 //Adds Symbol to symbol table
-void addSymbol(int type, int nameIdx, int value, int level, int address, int mark);
+void addSymbol(int type, int nameIdx, int value, int address);
 //Declares action for a constant variable
 void constDecleration();
 //Declares action for a variable
 void varDecleration();
-//Contains structure of code block
+//Non-terminal for code block in program
 void block();
-//Contains structure of whole program
+//Non-terminal for whole program
 void program();
 //Helper function to find symbolTable index
 int findSymbol(int nameIdx);
-
+//Non-terminal for statement in block
 void statement();
+//Collection of statements
+void statementList();
+//Non-terminal for factor in term
+void factor();
+//Non terminal for expression in statement
+void expression();
+//Non-terminal for terms in expressions
+void term();
+
+void condition();
 
 int main(){
     FILE* tokens = fopen("tokens.txt", "r");
@@ -138,7 +148,6 @@ void varDecleration(){
     //Add to symbolTable then increment address for the next variable
     addSymbol(2, nameIdx, 0, nextAddress);
     nextAddress++;
-    currentToken++;
 
     //Checks for multiple var's seperated by commas         tCode 15 = ","
     while(currentToken < tCount && tokenTable[currentToken].tCode == 15){
@@ -167,6 +176,8 @@ void block(){
     if(currentToken < tCount && tokenTable[currentToken].tCode == 32){
         varDecleration();
     }
+
+    statement();
 }
 
 void program(){
@@ -201,5 +212,238 @@ int findSymbol(int nameIdx){
 }
 
 void statement(){
+    if(currentToken > tCount){
+        return;
+    }
+
+    //Checks for assignment statements
+    if(currentToken < tCount && tokenTable[currentToken].tCode == 1){
+        int nameIdx = tokenTable[currentToken].val;
+        int symbolIdx = findSymbol(nameIdx);
+
+        if(symbolIdx < 0){
+            //Error: undeclared identifier
+            return;
+        }
+
+        if(symbolTable[symbolIdx].type != 2){
+            //Error: can't assign to number
+            return;
+        }
+
+        //Consumes identifier
+        currentToken++;
+        //Checks for "="
+        if(tokenTable[currentToken].tCode != 18){
+            //Error: expected =
+            return;
+        }
+
+        //Consumes :=
+        currentToken++;
+
+        expression();
+    }
+
+    //Looks for begin statements
+    else if(currentToken < tCount && tokenTable[currentToken].tCode == 20){
+        //Consumes begin
+        currentToken++;
+        statementList();
+        //Looks for end
+        if(currentToken < tCount && tokenTable[currentToken].tCode != 21){
+            //Error missing end statement
+            return;
+        }
+        //Consumes end
+        currentToken++;
+    }
+
+    //Looks for If then statements
+    else if(currentToken < tCount && tokenTable[currentToken].tCode == 22){
+        //Consumes if and checks for condition
+        currentToken++;
+        condition();
+
+        if(currentToken >= tCount || tokenTable[currentToken].tCode != 24){
+            //Error: no then statment
+            return;
+        }
+        //Consumes then
+        currentToken++;
+
+        statementList();
+
+        if(currentToken < tCount && tokenTable[currentToken].tCode == 36){
+            //Consumes else
+            currentToken++;
+            statementList();
+        }
+        
+        //Checks for "fi"
+        if(currentToken >= tCount || tokenTable[currentToken].tCode != 23){
+            //Error: no fi to show statement end
+            return;
+        }
+        //Consume fi
+        currentToken++;
+    }
+
+    //Looks for while/do statements
+    else if(currentToken < tCount && tokenTable[currentToken].tCode == 25){
+        //Consumes while
+        currentToken++;
+        condition();
+
+        if(currentToken < tCount && tokenTable[currentToken].tCode != 24){
+            //Error: no then statmement
+            return;
+        }
+        //Consume then
+        currentToken++;
+        statementList();
+        //Checks for elihw finishing of while
+        if(currentToken >= tCount || tokenTable[currentToken].tCode != 26){
+            //Error: no elihw statmement
+            return;
+        }
+        //Consumes od
+        currentToken++;
+    }
+
+    //Looks for read
+    else if(tokenTable[currentToken].tCode == 35){
+        //Consume read
+        currentToken++;
+
+        //Checks if its not identifier
+        if(currentToken >= tCount || tokenTable[currentToken].tCode != 1){
+            //Error 2: Expected identifier
+            return;
+        }
+
+        int nameIdx = tokenTable[currentToken].val;
+        int symbolIdx = findSymbol(nameIdx);
+
+        if(symbolIdx < 0){
+            //Error 15 Undeclared identifer
+            return;
+        }
+
+        //Makes sure identifier is a variable
+        if (symbolTable[symbolIdx].type != 2){
+            //Error 16: Can only read variables
+        }
+        //Consumes identifer
+        currentToken++;
+    }
+
+    //Looks for write
+    else if(tokenTable[currentToken].tCode == 34){
+    // Consume write
+    currentToken++;
+
+    expression();
+    }
+}
+
+
+void statementList(){
+    statement();
+
+    while(currentToken < tCount && tokenTable[currentToken].tCode == 16){
+        //Consumes ";"
+        currentToken++;
+        statement();
+    }
+}
+
+void factor(){
+    if(currentToken >= tCount){
+        //Error: Expected Factor
+        return;
+    }
+
+    int tokenType = tokenTable[currentToken].tCode;
+
+    //Checks for identifier
+    if(tokenType == 1){
+        int nameIdx = tokenTable[currentToken].val;
+
+        if(findSymbol(nameIdx) < 0){
+            //Error: Undeclared identifier
+            return;
+        }
+
+        //Consumes identifier
+        currentToken++;
+
+    }
+
+    //Checks for numbers
+    else if(tokenType == 2){
+        //Consumes number
+        currentToken++;
+    }
+
+    //Handles "("
+    else if(tokenType == 13){
+        currentToken++;
+
+        //Call expression
+        expression();
+
+        //Checks for valid closing parenthesis ")"
+        if(tokenTable[currentToken].tCode == 14){
+            //Consumes closing parenthesis
+            currentToken++;
+        }
+        else{
+            return;
+            //Error: Invalid closing parenthesis
+        }
+    }
+
+    else{
+        //Invalid factor
+        return;
+    }
+}
+
+void expression(){
+    //Consumes term in expression
+    term();
+
+    //Checks for "+" or "-"
+    while(currentToken < tCount  && (tokenTable[currentToken].tCode == 3 || tokenTable[currentToken].tCode == 4)){
+        //Consumes "+" or "-"
+        currentToken++;
+        term();
+    }
+
+    //Since expression calls turn the recursive call for term will finish first given multiplication and division precedence
+}
+
+void term(){
     
+    //Consumes the factor in term
+    factor();
+    //Checks for "*" or "/"
+    while(currentToken < tCount && (tokenTable[currentToken].tCode == 5 || tokenTable[currentToken].tCode == 6)){
+        //Consumes "*" or "/"
+        currentToken++;
+        factor();
+    }
+}
+
+void condition(){
+    expression();
+    if(currentToken < tCount && (tokenTable[currentToken].tCode == 7 || tokenTable[currentToken].tCode == 8 || tokenTable[currentToken].tCode == 9 || tokenTable[currentToken].tCode == 10 || tokenTable[currentToken].tCode == 11 || tokenTable[currentToken].tCode == 12)){
+        currentToken++;
+        expression();
+    }
+    else{
+        //Error: Invalid comparison opperator
+        return;
+    }
 }
