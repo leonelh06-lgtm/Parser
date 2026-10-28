@@ -1,9 +1,46 @@
+/*
+Homework:
+parser - HW3 PL/0 parser and symbol table
+
+Author(s): <Leonel Hernandez>
+
+Language: C only
+
+To Compile:
+  gcc -Wall -Wextra -std=c11 -O2 parser.c -o parser
+
+To Execute (on Eustis):
+  ./lex <input_file> && ./parser
+
+where:
+  <input_file> is the path to a text file holding a PL/0 source program;
+  ./lex writes tokens.txt and nametable.txt, and ./parser reads them from
+  the current directory and takes no arguments
+
+Notes:
+  - Implements the recursive-descent parser and symbol table described in
+    the homework instructions.
+  - Prints four sections to standard output: Name Table, Parse Trace,
+    Symbol Table and Result.
+  - Stops at the first syntax or symbol-table error, reports it with its
+    token number, and exits with status 1.
+  - Exits with status 0 when the whole program is accepted.
+  - Tested on Eustis.
+
+Class: COP 3402 - Systems Software
+
+Instructor: Jie Lin, Ph.D.
+
+Due Date: See Webcourses
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 //Defines tokens
     typedef struct{
         int tCode;
         int val;
+        char text[64];
     } Token;
 //Defines identifiers
     typedef struct {
@@ -70,19 +107,30 @@ const char* getTokenText(int tokenIdx);
 void consumeToken(const char* owner);
 //Helper for parse output 
 void traceLookup(int symbolIdx);
+//Prints nameTable
+void printNameTable();
+//Prints symbolTable
+void printSymbolTable();
 
 int main(){
     FILE* tokens = fopen("tokens.txt", "r");
     FILE* nametable = fopen("nametable.txt", "r");
 
-    if(tokens == NULL || nametable == NULL)
+    if(tokens == NULL || nametable == NULL){
+    printf("Name Table:\n\n");
+    printf("Parse Trace:\n\n");
         error(18);
+    }
     
     //Scanning tokens into local tokentable
     Token t;
     while(fscanf(tokens, "%d", &t.tCode) == 1){
-        if(t.tCode == 1 || t.tCode == 2){
+        if(t.tCode == 1){
             fscanf(tokens, "%d", &t.val);
+        }
+        else if(t.tCode == 2){
+            fscanf(tokens, "%63s", t.text);
+            t.val = atoi(t.text);
         }
         else{
             t.val = 0;
@@ -100,19 +148,28 @@ int main(){
     }
     fclose(nametable);
 
+    //Prints nameTable
+    printNameTable();
+
+    //Prints parse trace title
+    printf("Parse Trace:\n\n");
+    printf("token\tinput\ttext\tnonterminal\n");
+
     //Scanning tokenTable to get symbolTable
     program();
 
+    //Prints symbolTable
+    printSymbolTable();
 
-   
+    printf("Result:\n\n");
+    printf("program accepted\n");
+
     return 0;
 }
 
 /*Adds symbols to symbol table (needs a function unlike identifier and tokens
 since it requires context of tokens to decide symbol paramters)*/
 void addSymbol(int type, int nameIdx, int value, int address){
-    if(symbolCount >= 100)
-        error(17);
     Symbol s;
     s.type = type;
     s.value = value;
@@ -124,7 +181,7 @@ void addSymbol(int type, int nameIdx, int value, int address){
 
     //Parse tracing for constant
     if(type == 1){
-        printf("insert entry %d: constant %s, level 0, value %d\n", symbolCount, identifierTable[nameIdx].name, value);
+        printf("insert entry %d: constant %s, value %d, level 0\n", symbolCount, identifierTable[nameIdx].name, value);
     }
     //Parse tracing for variables
     else{
@@ -147,12 +204,14 @@ void constDecleration(){
         //Gets nameTable index and moves past identifer
         int nameIdx = tokenTable[currentToken].val;
 
+        consumeToken("const-decl");
+
         if(findSymbol(nameIdx) >= 0){
             //Error 14: Identifier already declared in block
+            currentToken--;
             error(14);
         }
 
-        consumeToken("const-decl");
 
         //Checks if ":=" is missing
         if(currentToken >= tCount || tokenTable[currentToken].tCode != 19){
@@ -210,12 +269,23 @@ void varDecleration(){
 
         int nameIdx = tokenTable[currentToken].val;
 
-        if(findSymbol(nameIdx) >= 0){
-            //Error 14: Identifier already declared in block
-            error(14);
-        }
         //Consume identifier
         consumeToken("var-decl");
+
+        if(findSymbol(nameIdx) >= 0){
+            //Error 14: Identifier already declared in block
+            currentToken--;
+            error(14);
+        }
+
+        
+
+        // Check whether the symbol table is full
+        if(symbolCount >= 100){
+            // Point back to the identifier for the error message
+            currentToken--;
+            error(17);
+        }
 
         //Adds var to symbol table
         addSymbol(2, nameIdx, 0, nextAddress);
@@ -310,8 +380,12 @@ void statement(){
         int nameIdx = tokenTable[currentToken].val;
         int symbolIdx = findSymbol(nameIdx);
 
+        //Consumes identifier
+        consumeToken("statement");
+
         if(symbolIdx < 0){
             //Error 15: undeclared identifier
+            currentToken--;
             error(15);
         }
 
@@ -320,11 +394,10 @@ void statement(){
 
         if(symbolTable[symbolIdx].type != 2){
             //Error 16: can't assign to number
+            currentToken--;
             error(16);
         }
 
-        //Consumes identifier
-        consumeToken("statement");
         //Checks for "="
         if(currentToken >= tCount || tokenTable[currentToken].tCode != 18){
             //Error 5: expected =
@@ -417,8 +490,12 @@ void statement(){
         int nameIdx = tokenTable[currentToken].val;
         int symbolIdx = findSymbol(nameIdx);
 
+        //Consumes identifer
+        consumeToken("statement");
+
         if(symbolIdx < 0){
             //Error 15 Undeclared identifer
+            currentToken--;
             error(15);
         }
 
@@ -428,10 +505,9 @@ void statement(){
         //Makes sure identifier is a variable
         if (symbolTable[symbolIdx].type != 2){
             //Error 16: Can only read variables
+            currentToken--;
             error(16);
         }
-        //Consumes identifer
-        consumeToken("statement");
     }
 
     //Looks for write
@@ -475,16 +551,19 @@ void factor(){
     if(tokenType == 1){
         int nameIdx = tokenTable[currentToken].val;
         int symbolIdx = findSymbol(nameIdx);
-        if(symbolIdx < 0){
-            //Error 15: Undeclared identifier
-            error(15);
-        }
-
-        //Traces lookup for symbol
-        traceLookup(symbolIdx);
 
         //Consumes identifier
         consumeToken("factor");
+
+        if(symbolIdx < 0){
+            //Error 15: Undeclared identifier
+            currentToken--;
+            error(15);
+        }
+
+
+        //Traces lookup for symbol
+        traceLookup(symbolIdx);
 
     }
 
@@ -589,8 +668,19 @@ static const char *messages[] = {
         "symbol table is full",
         "cannot open tokens.txt or nametable.txt"
     };
+    
+    //Prints symbolTable and result line
+    if(errCode == 18){
+    printf("\nSymbol Table:\n\n");
+    }
+    else{
+        printSymbolTable();
+    }
 
-    //Handles file opening issue
+    printf("Result:\n\n");
+
+
+    //Handles file opening issues
     if(errCode == 18){
         printf("Error 18: %s\n", messages[18]);
     }
@@ -629,8 +719,7 @@ const char* getTokenText(int tokenIdx){
 
     //Checks if number (must be converted to string)
     if(t.tCode == 2){
-        snprintf(buffer, sizeof(buffer), "%d", t.val);
-        return buffer;
+        return tokenTable[tokenIdx].text;
     }
 
     // Operators, punctuation, and keywords
@@ -655,14 +744,66 @@ const char* getTokenText(int tokenIdx){
 void consumeToken(const char* owner){
     if(currentToken >= tCount)
         return;
+    int code = tokenTable[currentToken].tCode;
+    //If current token is identifier or number which have val field
+    if(code == 1){
+        //For Identifiers
+        printf("%d\t%d %d\t%s\t%s\n", currentToken + 1, code, tokenTable[currentToken].val, getTokenText(currentToken), owner);
+    }
 
-    printf("%d %d %d %s %s\n", /*Simulates 1 based array like how the assignment asks*/currentToken + 1, tokenTable[currentToken].tCode, tokenTable[currentToken].val, getTokenText(currentToken),owner);
+    else if(code == 2){
+        //For Numbers
+        printf("%d\t%d %s\t%s\t%s\n", currentToken + 1, code, getTokenText(currentToken), getTokenText(currentToken), owner);
+    }
 
+    else{
+        //Other tokens don't trace val
+        printf("%d\t%d\t%s\t%s\n", currentToken + 1, code, getTokenText(currentToken), owner);
+    }
     currentToken++;
 }
 
 void traceLookup(int symbolIdx){
     Symbol s = symbolTable[symbolIdx];
+    const char* typeName;
+    if(s.type == 1)
+        typeName = "constant";
+    else
+        typeName = "variable";
 
-    printf("lookup %s: entry %d\n", identifierTable[s.nameIdx].name, symbolIdx);
+    printf("lookup %s: entry %d, %s, level %d\n", identifierTable[s.nameIdx].name, symbolIdx, typeName, s.level);
+}
+
+void printNameTable(){
+    printf("Name Table: \n\n");
+    if(iCount > 0){
+        printf("index\tname\tline\tcolumn\n");
+
+        for(int i = 0; i<iCount; i++){
+            Identifier id = identifierTable[i];
+            printf("%d\t%s\t%d\t%d\n", id.index, id.name, id.line, id.col);
+        }
+    }     
+    
+    printf("\n");
+}
+
+void printSymbolTable(){
+    printf("\nSymbol Table: \n\n");
+    if(symbolCount > 0){
+        printf("entry\tkind\tname\tvalue\tlevel\taddress\tmark\n");
+        for(int i = 0; i<symbolCount; i++){
+            Symbol s = symbolTable[i];
+            if(s.type == 1){
+                //Constants
+                printf("%d\tconstant\t%s\t%d\t%d\t-\t%d\n", i, identifierTable[s.nameIdx].name, s.value, s.level, s.mark);
+            }
+            else{
+                //Variables
+                printf("%d\tvariable\t%s\t-\t%d\t%d\t%d\n", i, identifierTable[s.nameIdx].name, s.level, s.address, s.mark);
+            }
+        }
+    }
+
+    printf("\n");
 }
